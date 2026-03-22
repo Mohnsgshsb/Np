@@ -4,9 +4,7 @@
     { "src": "api/index.js", "use": "@vercel/node" }
   ],
   "routes": [
-    // أي طلب يبدأ بـ /api يروح للـ API
     { "src": "/api/(.*)", "dest": "api/index.js" },
-    // أي طلب root يروح لـ index.html
     { "src": "/", "dest": "/index.html" }
   ]
 }
