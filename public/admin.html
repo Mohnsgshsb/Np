@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة تحكم الأدمن</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #111;
+      color: #eee;
+      padding: 20px;
+      margin: 0;
+      line-height: 1.6;
+    }
+    h2, h3 { color: #ff4444; margin-bottom: 15px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .section {
+      background: #1a1a1a;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 25px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    input, select {
+      padding: 10px;
+      margin: 8px 4px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #222;
+      color: white;
+      font-size: 1rem;
+    }
+    button {
+      padding: 10px 18px;
+      background: #ff4444;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover { background: #cc0000; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 0.95rem;
+    }
+    th, td {
+      padding: 12px;
+      text-align: center;
+      border: 1px solid #333;
+    }
+    th { background: #222; color: #ffdddd; }
+    .delete-btn {
+      background: #990000;
+      padding: 6px 12px;
+      font-size: 0.9rem;
+    }
+    #loading, #error {
+      color: #ffcc00;
+      font-weight: bold;
+      margin: 15px 0;
+      text-align: center;
+    }
+    @media (max-width: 768px) {
+      .section { padding: 15px; }
+      input, select, button { width: 100%; margin: 8px 0; }
+      table, thead, tbody, th, td, tr { display: block; }
+      th { display: none; }
+      td { border: none; position: relative; padding-left: 50%; text-align: right; }
+      td:before {
+        content: attr(data-label);
+        position: absolute;
+        left: 10px;
+        width: 45%;
+        font-weight: bold;
+        color: #aaa;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>لوحة تحكم الأدمن</h2>
+
+  <div id="loading">جاري تحميل البيانات...</div>
+  <div id="error" style="color:#ff6666; display:none;"></div>
+
+  <!-- إضافة مستخدم -->
+  <div class="section">
+    <h3>إضافة مستخدم جديد</h3>
+    <input type="text" id="newUser" placeholder="اسم المستخدم">
+    <input type="text" id="newPass" placeholder="كلمة المرور">
+    <input type="text" id="newCode" placeholder="كود الاشتراك">
+    <input type="date" id="newExpire">
+    <button onclick="addUser()">إضافة المستخدم</button>
+  </div>
+
+  <!-- توليد كود -->
+  <div class="section">
+    <h3>توليد كود اشتراك جديد</h3>
+    <select id="type">
+      <option value="day">يومي</option>
+      <option value="week">أسبوعي</option>
+      <option value="month">شهري</option>
+      <option value="permanent">دائم</option>
+    </select>
+    <input type="date" id="expire">
+    <button onclick="generateCode()">توليد كود</button>
+  </div>
+
+  <!-- جدول المستخدمين -->
+  <div class="section">
+    <h3>قائمة المستخدمين</h3>
+    <table id="usersTable">
+      <tr>
+        <th>اسم المستخدم</th>
+        <th>كلمة المرور</th>
+        <th>كود الاشتراك</th>
+        <th>تاريخ الانتهاء</th>
+        <th>إجراء</th>
+      </tr>
+    </table>
+  </div>
+
+  <!-- جدول الأكواد -->
+  <div class="section">
+    <h3>الأكواد المتاحة</h3>
+    <table id="codesTable">
+      <tr>
+        <th>الكود</th>
+        <th>النوع</th>
+        <th>تاريخ الانتهاء</th>
+        <th>تم الاستخدام؟</th>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────
+//               المتغيرات الأساسية
+// ────────────────────────────────────────────────
+const token = localStorage.getItem("adminToken");
+if (!token) {
+  alert("غير مصرح لك بالدخول لهذه الصفحة");
+  window.location.href = "index.html";
+}
+
+const loading = document.getElementById("loading");
+const errorDiv = document.getElementById("error");
+
+function showError(msg) {
+  errorDiv.textContent = msg;
+  errorDiv.style.display = "block";
+}
+
+function hideError() { errorDiv.style.display = "none"; }
+
+async function adminFetch(url, options = {}) {
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        ...options.headers
+      }
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "خطأ في الاتصال بالسيرفر");
+    }
+
+    return await res.json();
+  } catch (err) {
+    showError(err.message);
+    throw err;
+  }
+}
+
+// ────────────────────────────────────────────────
+//                   الدوال
+// ────────────────────────────────────────────────
+async function loadUsers() {
+  try {
+    const data = await adminFetch("/admin/users");
+    const table = document.getElementById("usersTable");
+    table.innerHTML = `<tr><th>اسم المستخدم</th><th>كلمة المرور</th><th>كود</th><th>انتهاء</th><th>إجراء</th></tr>`;
+
+    data.forEach(u => {
+      table.innerHTML += `
+        <tr>
+          <td data-label="اسم المستخدم">${u.username}</td>
+          <td data-label="كلمة المرور">••••••••</td>
+          <td data-label="كود">${u.code}</td>
+          <td data-label="انتهاء">${u.expire}</td>
+          <td data-label="إجراء">
+            <button class="delete-btn" onclick="deleteUser('${u.username}')">حذف</button>
+          </td>
+        </tr>`;
+    });
+  } catch (e) {}
+}
+
+async function loadCodes() {
+  try {
+    const data = await adminFetch("/admin/codes");
+    const table = document.getElementById("codesTable");
+    table.innerHTML = `<tr><th>الكود</th><th>النوع</th><th>انتهاء</th><th>تم الاستخدام؟</th></tr>`;
+
+    data.forEach(c => {
+      table.innerHTML += `
+        <tr>
+          <td data-label="الكود">${c.code}</td>
+          <td data-label="النوع">${c.type}</td>
+          <td data-label="انتهاء">${c.expire}</td>
+          <td data-label="تم الاستخدام؟">${c.used ? "نعم" : "لا"}</td>
+        </tr>`;
+    });
+  } catch (e) {}
+}
+
+async function addUser() {
+  const username = document.getElementById("newUser").value.trim();
+  const password = document.getElementById("newPass").value.trim();
+  const code     = document.getElementById("newCode").value.trim();
+  const expire   = document.getElementById("newExpire").value;
+
+  if (!username || !password || !code || !expire) {
+    return alert("جميع الحقول مطلوبة");
+  }
+
+  try {
+    const res = await adminFetch("/admin/adduser", {
+      method: "POST",
+      body: JSON.stringify({ username, password, code, expire })
+    });
+
+    if (res.success) {
+      alert("تم إضافة المستخدم بنجاح");
+      loadUsers();
+      // نظف الحقول
+      document.getElementById("newUser").value = "";
+      document.getElementById("newPass").value = "";
+      document.getElementById("newCode").value = "";
+      document.getElementById("newExpire").value = "";
+    }
+  } catch (e) {}
+}
+
+async function deleteUser(username) {
+  if (!confirm(`هل أنت متأكد من حذف المستخدم "${username}" ؟\nهذا الإجراء لا يمكن التراجع عنه.`)) {
+    return;
+  }
+
+  try {
+    const res = await adminFetch("/admin/deleteuser", {
+      method: "POST",
+      body: JSON.stringify({ username })
+    });
+
+    if (res.success) {
+      alert("تم حذف المستخدم");
+      loadUsers();
+    }
+  } catch (e) {}
+}
+
+async function generateCode() {
+  const type = document.getElementById("type").value;
+  const expire = document.getElementById("expire").value;
+
+  if (!expire) return alert("يرجى اختيار تاريخ الانتهاء");
+
+  try {
+    const data = await adminFetch("/admin/generatecode", {
+      method: "POST",
+      body: JSON.stringify({ type, expire })
+    });
+
+    alert(`تم توليد كود جديد:   ${data.code}\nنوع: ${data.type}\nينتهي في: ${data.expire}`);
+    loadCodes();
+  } catch (e) {}
+}
+
+// ────────────────────────────────────────────────
+//                   التحميل الأولي
+// ────────────────────────────────────────────────
+(async () => {
+  loading.textContent = "جاري تحميل البيانات...";
+  try {
+    await Promise.all([loadUsers(), loadCodes()]);
+    loading.style.display = "none";
+  } catch (e) {
+    loading.textContent = "حدث خطأ أثناء تحميل البيانات";
+  }
+})();
+</script>
+</body>
+</html>
